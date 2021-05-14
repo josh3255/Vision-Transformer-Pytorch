@@ -2,6 +2,9 @@ import torch
 import torch.nn as nn
 import torch.functional as F
 
+from einops import rearrange, reduce, repeat
+from einops.layers.torch import Rearrange, Reduce
+
 import config
 
 class PatchEmbedding(nn.Module):
@@ -23,8 +26,12 @@ class PatchEmbedding(nn.Module):
         flatted_data = self.flatten(embedded_data)
         transposed_data = torch.transpose(flatted_data, dim0=1, dim1=2)
 
-        cls_token = nn.Parameter(torch.randn((b, 1, self.emb_size)))
-        position_emb = nn.Parameter(torch.randn(N + 1, self.emb_size))
+        if torch.cuda.is_available():
+            cls_token = nn.Parameter(torch.randn((b, 1, self.emb_size))).cuda()
+            position_emb = nn.Parameter(torch.randn(N + 1, self.emb_size)).cuda()
+        else:
+            cls_token = nn.Parameter(torch.randn((b, 1, self.emb_size)))
+            position_emb = nn.Parameter(torch.randn(N + 1, self.emb_size))
 
         embedded_data = torch.cat([cls_token, transposed_data], dim=1)
         embedded_data += position_emb
@@ -86,7 +93,7 @@ class FeedForwardBlock(nn.Module):
 class TransformerEncoderBlock(nn.Module):
     def __init__(self, emb_size : int = 768):
         super(TransformerEncoderBlock, self).__init__()
-        self.embedding = PatchEmbedding(patch_size=(16, 16), emb_size=emb_size)
+        # self.embedding = PatchEmbedding(patch_size=(16, 16), emb_size=emb_size)
 
         self.norm1 = nn.LayerNorm(emb_size)
         self.MHA = MultiHeadAttention(emb_size=emb_size)
@@ -94,7 +101,7 @@ class TransformerEncoderBlock(nn.Module):
         self.MLP = FeedForwardBlock(emb_size=emb_size)
 
     def forward(self, input):
-        residual = self.embedding(input)
+        residual = input
         out = self.norm1(residual)
         out = self.MHA(out)
         residual = residual + out
@@ -108,11 +115,21 @@ class TransformerEncoderBlock(nn.Module):
 class TransformerEncoder(nn.Sequential):
     def __init__(self, depth : int = 12, **kwargs):
         super(TransformerEncoder, self).__init__(
-            *[TransformerEncoderBlock(**kwargs) for _ in range(depth)]
+            PatchEmbedding(patch_size=(16, 16), emb_size=768),
+            *[TransformerEncoderBlock(**kwargs) for _ in range(depth)],
+            ClassificationHead()
         )
 
+class ClassificationHead(nn.Sequential):
+    def __init__(self, emb_size : int = 768, classes : int = 10):
+        super(ClassificationHead, self).__init__(
+            Reduce('b n e -> b e', reduction='mean'),
+            nn.LayerNorm(emb_size),
+            nn.Linear(emb_size, classes)
+        )
 
 if __name__ == '__main__':
-    x = torch.randn(8, 3, 224, 224)
-    Net = TransformerEncoderBlock()
+    x = torch.randn(8, 3, 32, 32)
+    Net = TransformerEncoder()
     embedded = Net(x)
+    print(embedded.shape)
