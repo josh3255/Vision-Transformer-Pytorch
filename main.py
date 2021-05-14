@@ -9,7 +9,7 @@ import torch.backends.cudnn as cudnn
 
 if __name__ == '__main__':
     train_dataset = Cifar10Train('/home/josh/Data/cifar-10-python/cifar-10-batches-py/')
-    train_dataloader = DataLoader(train_dataset, batch_size=512, shuffle=True, num_workers=1)
+    train_dataloader = DataLoader(train_dataset, batch_size=1024, shuffle=True, num_workers=1)
     print('successfully loaded {} training images and labels'.format(len(train_dataloader.dataset)))
 
     valid_dataset = Cifar10Valid('/home/josh/Data/cifar-10-python/cifar-10-testbatches-py')
@@ -22,7 +22,6 @@ if __name__ == '__main__':
         model = torch.nn.DataParallel(model, device_ids=[0]).cuda()
     else:
         print('cuda is not available')
-    model.eval()
 
     optimizer = optim.Adam(model.parameters(), lr=3.2768e-5, weight_decay=5e-4)
 
@@ -31,9 +30,9 @@ if __name__ == '__main__':
         train_loss = 0.0
         valid_loss = 0.0
         accuracy = 0
-
+        
+        model.train()
         for step, item in enumerate(train_dataloader):
-            model.train()
             def train():
                 optimizer.zero_grad()
                 train_data, train_label = item
@@ -50,8 +49,8 @@ if __name__ == '__main__':
             train_loss = train_loss + step_loss.item()
             # print('step : {} || step_loss : {}'w.format(step, step_loss))
 
+        model.eval()
         for step, item in enumerate(valid_dataloader):
-            model.eval()
             def valid():
                 valid_accuracy = 0
                 valid_data, valid_label = item
@@ -71,7 +70,7 @@ if __name__ == '__main__':
             accuracy = accuracy + _a
             valid_loss = valid_loss + _l
 
-        print('epoch : {} || train_loss : {} || validation acc : {} validation_loss : {}\n'.format(epoch, train_loss,
-                                                                                                   accuracy / len(valid_dataloader.dataset),valid_loss))
+        print('epoch : {} || train_loss : {} || validation acc : {} validation_loss : {}'.format(epoch, train_loss / len(train_dataloader.dataset),
+                                                                                                   accuracy / len(valid_dataloader.dataset),valid_loss / len(valid_dataloader.dataset)))
         if epoch % 10 == 0:
             torch.save(model.module.state_dict(), '/home/josh/Weights/state_dict/ViT_' + repr(epoch) + '.pth')
