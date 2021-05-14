@@ -67,10 +67,52 @@ class MultiHeadAttention(nn.Module):
         # out : Batch, Patch num(N) + 1, Embedding Size
         return out
 
+class FeedForwardBlock(nn.Module):
+    def __init__(self, emb_size : int = 768, expansion : int = 4, drop_probability : float = 0.):
+        super(FeedForwardBlock, self).__init__()
+        self.linear_layer1 = nn.Linear(emb_size, expansion * emb_size)
+        self.GeLU = nn.GELU()
+        self.Dropout = nn.Dropout(drop_probability)
+        self.linear_layer2 = nn.Linear(expansion * emb_size, emb_size)
+
+    def forward(self, input):
+        out = self.linear_layer1(input)
+        out = self.GeLU(out)
+        out = self.Dropout(out)
+        out = self.linear_layer2(out)
+
+        return out
+
+class TransformerEncoderBlock(nn.Module):
+    def __init__(self, emb_size : int = 768):
+        super(TransformerEncoderBlock, self).__init__()
+        self.embedding = PatchEmbedding(patch_size=(16, 16), emb_size=emb_size)
+
+        self.norm1 = nn.LayerNorm(emb_size)
+        self.MHA = MultiHeadAttention(emb_size=emb_size)
+        self.norm2 = nn.LayerNorm(emb_size)
+        self.MLP = FeedForwardBlock(emb_size=emb_size)
+
+    def forward(self, input):
+        residual = self.embedding(input)
+        out = self.norm1(residual)
+        out = self.MHA(out)
+        residual = residual + out
+
+        out = self.norm2(out)
+        out = self.MLP(out)
+        residual = residual + out
+
+        return residual
+
+class TransformerEncoder(nn.Sequential):
+    def __init__(self, depth : int = 12, **kwargs):
+        super(TransformerEncoder, self).__init__(
+            *[TransformerEncoderBlock(**kwargs) for _ in range(depth)]
+        )
+
 
 if __name__ == '__main__':
     x = torch.randn(8, 3, 224, 224)
-    Net = PatchEmbedding()
+    Net = TransformerEncoderBlock()
     embedded = Net(x)
-    Net2 = MultiHeadAttention()
-    Net2(embedded)
